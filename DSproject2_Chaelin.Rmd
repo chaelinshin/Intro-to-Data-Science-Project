@@ -1,0 +1,388 @@
+---
+title: "DSProject2_Chaelin"
+author: "CS"
+date: "4/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# some of common options (and the defaults) are: 
+# include=T, eval=T, echo=T, results='hide'/'asis',..., collapse=F, warning=T, message=T, error=T, cache=T, fig.width=6, fig.height=4, fig.dim=c(6,4) #inches, fig.align='left'/'center','right', 
+# knitr::opts_chunk$set(warning = F, results = 'markup', message = F)
+knitr::opts_chunk$set(warning = F, results = 'hide', message = F)
+# knitr::opts_chunk$set(include = F)
+# knitr::opts_chunk$set(echo = TRUE)
+options(scientific=T, digits = 3) 
+# options(scipen=9, digits = 3) 
+# ‘scipen’: integer. A penalty to be applied when deciding to print numeric values in fixed or exponential notation.  Positive values bias towards fixed and negative towards scientific notation: fixed notation will be preferred unless it is more than ‘scipen’ digits wider.
+# use scipen=999 to prevent scientific notation at all times
+```
+
+```{r basic, include=F}
+# use this function to conveniently load libraries and work smoothly with knitting
+# can add quietly=T option to the require() function
+loadPkg = function(pkg, character.only = FALSE) { 
+  if (!character.only) { pkg <- as.character(substitute(pkg)) }
+  if (!require(pkg,character.only=T, quietly =T)) {  install.packages(pkg,dep=T,repos="http://cran.us.r-project.org"); if(!require(pkg,character.only=T)) stop("Package not found") } 
+}
+loadPkg(knitr)
+
+# unload/detact package when done using it
+unloadPkg = function(pkg, character.only = FALSE) { 
+  if(!character.only) { pkg <- as.character(substitute(pkg)) } 
+  search_item <- paste("package", pkg,sep = ":") 
+  while(search_item %in% search()) { detach(search_item, unload = TRUE, character.only = TRUE) } 
+}
+
+```
+
+```{r xkablesummary, include=F}
+loadPkg(xtable)
+loadPkg(kableExtra)
+loadPkg(stringi)
+
+xkabledply = function(modelsmmrytable, title="Table", digits = 4, pos="left", bso="striped") { 
+  #' Combining base::summary, xtable, and kableExtra, to easily display model summary. 
+  #' wrapper for the base::summary function on model objects
+  #' ELo 202004 GWU DATS
+  #' version 1.2
+  #' @param modelsmmrytable This can be a generic table, a model object such as lm(), or the summary of a model object summary(lm()) 
+  #' @param title Title of table. 
+  #' @param digits Number of digits to display
+  #' @param pos Position of table, c("left","center","right") 
+  #' @param bso bootstrap_options = c("basic", "striped", "bordered", "hover", "condensed", "responsive")
+  #' @return HTML table for display
+  #' @examples
+  #' library("xtable")
+  #' library("kableExtra")
+  #' xkabledply( df, title="Table testing", pos="left", bso="hover" )
+  modelsmmrytable %>%
+    xtable() %>% 
+    kable(caption = title, digits = digits) %>%
+    kable_styling(bootstrap_options = bso, full_width = FALSE, position = pos)
+}
+```
+
+```{r confusion matrix performance metrics function, include=F}
+
+confusion_matrix_measure <- function(conf) {
+  TP <- conf[2, 2]
+  TN <- conf[1, 1]
+  FP <- conf[1, 2]
+  FN <- conf[2, 1]
+  n <- TP+TN+FP+FN
+
+  accuracy <- round((TP+TN)/n,3)
+  sensitivity <- round(TP/(TP+FN),3)
+  specificity <- round(TN/(TN+FP),3)
+  precision <- round(TP/(TP+FP),3)
+  f1 <- round(2*TP/(2*TP+FP+FN),3)
+
+  c1 <- cbind("Accuracy", accuracy)
+  c2 <- cbind("Sensitivity (Recall)", sensitivity)
+  c3 <- cbind("Specificity", specificity)
+  c4 <- cbind("Precision", precision)
+  c5 <- cbind("F1 Score", f1)
+  output <- as.data.frame(rbind(c1, c2, c3, c4, c5))
+  names(output)[1:2] <- c("Performance Measures","")
+  output
+}
+```
+
+
+```{r import data, include=F}
+
+# Import the full file
+full_data <- data.frame(read.csv('samadult.csv'))
+
+
+# Select variables of interests
+library(dplyr)
+health = select(full_data, ASISLPFL, ALC12MNO, ASINERV, AWEBOFNO, 
+                AWEBOFTP, AMIGR, CHPAIN6M, WRKLYR4, WRKCATA, 
+                SUPERVIS, ARX12MO, DBHVPAN)
+
+
+
+# Rename variables
+var_list <- c('SleepQual', 'Alcohol', 'Nervous', 'NumInternet', 'TimeInternet',
+              'Headache', 'Pain', 'Job', 'DescribeJob', 'Supervise',
+              'Prescribed','Exercise')
+
+names(health)[c(1:12)] <- var_list
+
+
+# Check data structure
+str(health)
+
+```
+
+``` {r internet, include=F}
+
+healthsubset <- subset(health, (SleepQual < 97) & (Alcohol < 997) & (Nervous < 7) & 
+                         (NumInternet < 997) & (TimeInternet < 7) & (Headache < 7) &
+                         (Pain < 7) & (Job < 7) & (DescribeJob < 7) &
+                         (Supervise < 7) & (Prescribed < 7) & (Exercise < 7))
+
+# internetuse: how many times did you use the Internet per year? 
+health["internetuse"] <- NA
+
+for(i in 1:length(healthsubset$TimeInternet)){
+  if((healthsubset$TimeInternet[i]==1)){
+    healthsubset$internetuse[i] <- (healthsubset$TimeInternet[i])*(healthsubset$NumInternet[i])*365 
+  }else if((healthsubset$TimeInternet[i]==2)){
+    healthsubset$internetuse[i] <- (healthsubset$TimeInternet[i])*(healthsubset$NumInternet[i])*52
+  }else if((healthsubset$TimeInternet[i]==3)){
+    healthsubset$internetuse[i] <- healthsubset$TimeInternet[i]*healthsubset$NumInternet[i]*12
+  }else if((healthsubset$TimeInternet[i]==4)){
+    healthsubset$internetuse[i] <- healthsubset$TimeInternet[i]*healthsubset$NumInternet[i]
+  }
+}
+
+str(healthsubset)
+
+
+```
+``` {r new subset, include=F}
+
+# exclude NumInternet and TimeInternet now that we have internetuse 
+healthsubset <- select(healthsubset, -c('NumInternet', 'TimeInternet'))
+str(healthsubset)
+
+```
+
+
+``` {r new column, include=F}
+# Question for SleepQual: In the past week, how many times did you have trouble falling asleep? 
+# made new column SleepQual2 based on the SleepQual
+# "Good" if have trouble falling asleep 0 or 1 time, and "Bad" if have trouble falling asleep at least 2 times. 
+
+SleepQual2 <- cut(healthsubset$SleepQual, breaks=c(-Inf,1,7),labels=c("Good","Bad"))
+healthsubset <- cbind(healthsubset, SleepQual2)
+str(healthsubset)
+
+```
+
+``` {r bar chart, include=F}
+
+loadPkg(ggplot2)
+ggplot(healthsubset,aes(x=SleepQual2))+
+  geom_bar(color="red",fill="orange")+
+  labs(title="Sleep Quality Bar Chart",x="Sleep Quality") +
+  theme(
+plot.title = element_text(color="red", size=14, face="bold.italic"),
+axis.title.x = element_text(color="#993333", size=12, face="bold"),
+axis.title.y = element_text(color="#993333", size=12, face="bold"))
+
+
+```
+
+
+```{r Convert data type, include=F}
+
+# Convert into factors
+
+healthsubset$Nervous <- factor(healthsubset$Nervous)
+healthsubset$Headache <- factor(healthsubset$Headache)
+healthsubset$Pain <- factor(healthsubset$Pain)
+healthsubset$Job <- factor(healthsubset$Job) # three factors: "had job last week", "no job last week, had job past 12 months", "no job last week, no job past 12 months" (0 people who "never worked")
+healthsubset$DescribeJob <- factor(healthsubset$DescribeJob)
+healthsubset$Supervise <- factor(healthsubset$Supervise)
+healthsubset$Prescribed <- factor(healthsubset$Prescribed)
+healthsubset$Exercise <- factor(healthsubset$Exercise)
+
+
+# Check data structure
+str(healthsubset)
+```
+
+
+``` {r test_train, include=F}
+# split into training and test sets
+
+set.seed(10)
+splitarray <- sample(2, nrow(healthsubset), replace=TRUE, prob=c(0.75, 0.25))
+sleep_Xtrain <- healthsubset[splitarray==1, 2:11]
+sleep_Xtest <- healthsubset[splitarray==2, 2:11]
+sleep_ytrain <- healthsubset[splitarray==1, 12]
+sleep_ytest <- healthsubset[splitarray==2, 12]
+
+sleep_train = sleep_Xtrain
+sleep_train$SleepQual2 = sleep_ytrain
+sleep_test = sleep_Xtest
+sleep_test$SleepQual2 = sleep_ytest
+
+```
+
+
+The first model we built was the logistic regression model. In order to run the model, we used the dependent variable, SleepQual2, which is a dichotomous variable with the values of either "bad" or "good." As for the independent variables, we were not certain as to what variables will be useful for our analysis, so we included all independent variables in running our first logistic regression model. In addition, we divided our data into training and test sets (3:1). 
+
+Below are the results from our first logistic regression model: 
+
+
+``` {r logit, results="markup"}
+
+# logistic regression model 
+sleeplogit <- glm(SleepQual2 ~ . , data = sleep_train, binomial(link = "logit"))
+summary(sleeplogit)
+```
+
+
+After running this model, we initially checked whether the p-values for the variables' coefficients were significantly small. There were three variables that had large p-values: Alcohol, DescribeJob, and internetuse. Therefore, we eliminated these three independent variables, and ran another logistic regression model. 
+
+
+```{r exp, include=F}
+# growth/decay factors
+expcoeff = exp(coef(sleeplogit))
+expcoeff
+
+
+```
+
+``` {r confusion matrix 1, include=F}
+
+# confusion matrix
+loadPkg(regclass)
+sleeplogit_confusion = confusion_matrix(sleeplogit, DATA=sleep_test)
+
+unloadPkg(regclass)
+
+xkabledply(sleeplogit_confusion,"Confusion Matrix: Logit model, cutoff = 0.5") 
+# accuracy: 0.28
+
+measure = confusion_matrix_measure(sleeplogit_confusion)
+xkabledply(measure,"Confusion Matrix Scores, cutoff = 0.5")
+
+```
+Below are the results from our second logistic regression model: 
+
+
+``` {r logit2, results="markup"}
+
+# logistic regression model with variables that have small p-values: Nervous, Headache, Pain, Job, Supervise,Prescribed, Exercise
+# Nervous: 1 - All of the time ; 2 - Most of the time ; 3 - Some of the time ; 4 - A little of the time ; 5 - None
+# Headache: 1 - Yes ; 2 - No
+# Pain: 1 - Never ; 2 - Some days ; 3 - Most days ; 4 - Every day 
+# Job: 0 - Had job last week ; 1 - No job last week, had job past 12 months ; 2 - No job last week, no job past 12 months
+
+# Supervise: 1 - Yes ; 2 - No
+# Exercise: 1 - Yes ; 2 - No 
+
+
+sleeplogit2 <- glm(SleepQual2 ~ Nervous + Headache + Pain + Job
+                   + Supervise + Prescribed + Exercise
+                   , data = sleep_train, binomial(link = "logit"))
+summary(sleeplogit2)
+```
+
+
+According to the results from our second logistic regression model, we were able to learn that, first, the effect of having no headache, compared to having a headache, decreases the chance of having bad sleep quality, the log(odds-ratio), by a factor of 0.6540. 
+
+Second, the coefficients of the Nervous variable show us that feeling nervous some of the time, a little of the time, and none of the time decrease the chance of having bad sleep quality compared to feeling nervous all the time. To be more specific, the effect of feeling nervous some of the time, a little of the time, and none of the time, compared to feeling nervous all the time, respectively decrease the chance of having bad sleep quality by a factor of 0.5538, 0.9582, and 1.4812. Additionally, if one feels nervous most of the time, that will actually increase the chance of bad sleep quality by a factor of 0.07 compared to feeling nervous all the time. This may seem odd; however, 0.07 is a relatively small number. Also, for those survey respondents who feel nervous almost always in their daily lives, when choosing between response 1 (feeling nervous all the time) and response 2 (feeling nervous most of the time), they may have opted for the less extreme answer, response 2. Moreover, if group response 1 and response 2 together, the results simply show us that the more you feel nervous, the more likely you will have trouble falling asleep.
+
+Third, the coefficients of the Pain variable indicate that as one experiences more pain, the chance of having bad sleep quality increases. More specifically, feeling pain some days, most days, and everyday increase the chance of bad sleep quality respectively by a factor of 0.4636, 0.8278, and 0.9513 for the log(odds-ratio).
+
+Fourth, the coefficients of the Job variable show us that employment is important for having good sleep quality. The effect of having no job last week (but had job in the past 12 months) increased the chance of bad sleep quality by a factor of 0.3338 for the log(odds-ratio) compared to currently having a job. Also, the effect of having no job last week and in the past 12 months increased the chance of bad sleep quality by a factor of 0.1051. 
+
+Lastly, the effect of being not prescribed with any medication decreases the chance of bad sleep quality by a factor of 0.1871. And, the chance of bad sleep quality increases by a factor of 0.0925 if one does not supervise other employees at work. Moreover, the chance of bad sleep quality decreases by a factor of 0.1644 if one does not exercise, compared to when one exercises. 
+
+Simply put, one is more likely to sleep better if one does not feel nervous, if one does not feel pain or headaches, if one is employed, if one is not prescribed with any medication, if one has a supervisorial roles at work, and if one does not work out. 
+
+
+Also, we exponentialized the coefficients to see the growth and decay factors. If the exponentialized coefficients are larger than 1, it means that those variables contribute to increasing the chance of bad sleep quality. On the other hand, if the exponentialized coefficients are smaller than 1, those variables decrease the chance of bad sleep quality. 
+
+
+``` {r growth and decay, results="markup"}
+# growth/decay factors
+expcoeff2 = exp(coef(sleeplogit2))
+expcoeff2
+
+
+```
+
+
+Below are the confusion matrix and a table of performance scores of the logistic regression model:
+
+
+``` {r table, include=F}
+
+
+# confusion matrix
+loadPkg(regclass)
+loadPkg(caret)
+
+pdata <- predict(object=sleeplogit2, newdata=sleep_test, type="response")
+pred <-  ifelse(as.numeric(pdata >= 0.50),"Good","Bad")
+pred <- as.factor(pred)
+container <- data.frame(truth=sleep_test$SleepQual2, fit=pred)
+sleeplogit_confusion2 = confusionMatrix(data=container$fit, reference=container$truth)
+sleeplogit_confusion2
+
+sleeplogit_confusion3 = confusion_matrix(sleeplogit2, DATA=sleep_test)
+sleeplogit_confusion3
+
+
+unloadPkg(regclass)
+
+
+
+#xkabledply(sleeplogit_confusion2,"Confusion Matrix 2: Logit model, cutoff = 0.5")
+
+# performance measures
+#measure2 = confusion_matrix_measure(sleeplogit_confusion2)
+#xkabledply(measure2,"Confusion Matrix Scores, cutoff = 0.5")
+
+```
+```{r confusion matrix 2, include=F}
+
+loadPkg(caret)
+loadPkg(dplyr)
+sleep_test$SleepQual2 <- as.factor(recode(sleep_test$SleepQual2, 'Good' = 0, 'Bad' = 1))
+pdata <- exp(predict(sleeplogit2, newdata = sleep_test))
+# use caret and compute a confusion matrix
+cm <- confusionMatrix(sleep_test$SleepQual2, as.factor(as.numeric(pdata>1)))
+conf <- cm$table
+```
+
+```{r, results="markup"}
+xkabledply(conf,"Confusion Matrix 2: Logit model, cutoff = 0.5")
+measure2 = confusion_matrix_measure(conf)
+xkabledply(measure2,"Confusion Matrix Scores, cutoff = 0.5")
+
+```
+
+
+In the confusion matrix, 0 denotes "Good" and 1 denotes "Bad." Our model was successful in that it predicted good sleep quality very well when the actual data was good sleep quality. Thus, the accuracy score is 0.715, which is pretty high. However, the recall rate is merely 0.259, which indicates that our model was not good at predicting bad sleep quality. This is probably due to the imbalanced nature of our data. 
+
+
+Below is the ROC-AUC curve: 
+
+
+``` {r evaluation, results="markup"}
+# Model evaluation
+# ROC
+loadPkg(pROC)
+sleep_test$prob = predict(sleeplogit2, newdata=sleep_test, type=c("response"))
+h <- roc(SleepQual2~prob, data=sleep_test)
+auc(h)
+plot(h)
+unloadPkg(pROC)
+```
+
+
+
+The area under the curve is approximately 0.7, which is lower than 0.8, but a still relatively high number.
+
+
+``` {r original data, include=F}
+
+# wanted to see how many good sleep quality data points we had in our original data versus bad sleep quality data points
+
+nrow(healthsubset[healthsubset$SleepQual2 == "Good",])
+nrow(healthsubset[healthsubset$SleepQual2 == "Bad",])
+
+```
+
+
+
+
