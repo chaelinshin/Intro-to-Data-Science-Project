@@ -4,6 +4,7 @@ author: "CS"
 date: "4/7/2020"
 output: html_document
 ---
+# The followings codes are based on codes from course materials (Intro to Data Science, 6101, at the George Washington University)
 
 ```{r setup, include=FALSE}
 # some of common options (and the defaults) are: 
